@@ -2,6 +2,27 @@ import streamlit as st
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import TextFormatter
 
+# إخفاء العناصر غير المرغوب فيها
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            .stDeployButton {display:none;}
+            #stStreamlitLogo {display: none;}
+            a {
+                text-decoration: none;
+                color: inherit;
+                pointer-events: none;
+            }
+            a:hover {
+                text-decoration: none;
+                color: inherit;
+                cursor: default;
+            }
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 # Set the title of the application
 st.title('YouTube Transcript Extractor')
 
@@ -39,21 +60,3 @@ if st.button('Start Extracting'):
                 st.text_area('Extracted Transcript', output, height=300)
         except Exception as e:
             st.error(f"Please Enter a Valid YouTube Video Link")
-
-
-# CSS مخصص لإخفاء الروابط عند تمرير الفأرة
-hide_links_style = """
-    <style>
-    a {
-        text-decoration: none;
-        color: inherit;
-        pointer-events: none;
-    }
-    a:hover {
-        text-decoration: none;
-        color: inherit;
-        cursor: default;
-    }
-    </style>
-    """
-st.markdown(hide_links_style, unsafe_allow_html=True)
