@@ -1,6 +1,7 @@
 import streamlit as st
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import TextFormatter
+import re
 
 # إخفاء العناصر غير المرغوب فيها
 hide_streamlit_style = """
@@ -23,40 +24,84 @@ hide_streamlit_style = """
             """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# Set the title of the application
+# عنوان التطبيق
 st.title('YouTube Transcript Extractor')
 
-# Input field for YouTube video URL
+# حقل إدخال رابط فيديو YouTube
 url = st.text_input('Enter YouTube video URL')
 
-# List of available languages
-available_languages = []
+def extract_video_id(url):
+    """استخراج معرف الفيديو من روابط YouTube المختلفة"""
+    patterns = [
+        r'(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?v=([^&\s]+)',
+        r'(?:https?:\/\/)?(?:www\.)?youtu\.be\/([^\s]+)',
+        r'(?:https?:\/\/)?(?:www\.)?youtube\.com\/embed\/([^\s]+)',
+        r'([a-zA-Z0-9_-]{11})'
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
 
-# Button to start extracting the transcript
+# زر لبدء استخراج النص
 if st.button('Start Extracting'):
-    if url:
+    if not url:
+        st.error("Please enter a YouTube video URL")
+    else:
         try:
-            # Display a loading message
+            # عرض رسالة التحميل
             with st.spinner('Extracting transcript...'):
-                # Extract video ID from the URL
-                video_id = url.replace('https://www.youtube.com/watch?v=', '')
-
-                # Get available transcripts
-                transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
+                # استخراج معرف الفيديو
+                video_id = extract_video_id(url)
                 
-                # Get the available languages
-                available_languages = [t.language_code for t in transcripts]
-
-                # Get transcript in the selected language
-                selected_language = st.selectbox('Select Transcript Language', available_languages, index=available_languages.index('en') if 'en' in available_languages else 0)
-                
-                transcript = transcripts.find_transcript([selected_language]).fetch()
-
-                # Format the extracted transcript
-                formatter = TextFormatter()
-                output = formatter.format_transcript(transcript)
-
-                # Display the formatted transcript
-                st.text_area('Extracted Transcript', output, height=300)
+                if not video_id:
+                    st.error("Invalid YouTube URL format. Please check the URL and try again.")
+                else:
+                    try:
+                        # الحصول على النصوص المتاحة
+                        transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
+                        
+                        # الحصول على اللغات المتاحة
+                        available_languages = [(t.language_code, t.language) for t in transcripts]
+                        
+                        # تحويل القائمة إلى قاموس للعرض بشكل أفضل
+                        language_options = {f"{lang[1]} ({lang[0]})": lang[0] for lang in available_languages}
+                        
+                        # اختيار اللغة
+                        selected_language_display = st.selectbox(
+                            'Select Transcript Language',
+                            options=list(language_options.keys()),
+                            index=0
+                        )
+                        
+                        # الحصول على رمز اللغة المحدد
+                        selected_language_code = language_options[selected_language_display]
+                        
+                        # جلب النص
+                        transcript = transcripts.find_transcript([selected_language_code]).fetch()
+                        
+                        # تنسيق النص المستخرج
+                        formatter = TextFormatter()
+                        output = formatter.format_transcript(transcript)
+                        
+                        # عرض النص المنسق
+                        st.text_area('Extracted Transcript', output, height=300)
+                        
+                        # إضافة زر للتحميل
+                        st.download_button(
+                            label="Download Transcript",
+                            data=output,
+                            file_name=f"transcript_{video_id}.txt",
+                            mime="text/plain"
+                        )
+                        
+                    except Exception as e:
+                        if "Subtitles are disabled for this video" in str(e):
+                            st.error("This video doesn't have any subtitles/transcripts available.")
+                        else:
+                            st.error(f"Error accessing transcript: {str(e)}")
+                            
         except Exception as e:
-            st.error(f"Please Enter a Valid YouTube Video Link")
+            st.error(f"An error occurred: {str(e)}")
