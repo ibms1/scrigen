@@ -1,8 +1,8 @@
 import streamlit as st
-from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
-from youtube_transcript_api.formatters import TextFormatter
+import json
 import re
+import urllib.request
+import urllib.parse
 
 # إخفاء العناصر غير المرغوب فيها
 hide_streamlit_style = """
@@ -32,23 +32,69 @@ def extract_video_id(url):
             return match.group(1)
     return None
 
-def get_available_transcripts(video_id):
-    """الحصول على النصوص المتاحة مع معالجة الأخطاء المحسنة"""
+def get_transcript(video_id):
+    """الحصول على النص باستخدام innertube API"""
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9'
+    }
+    
     try:
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-        languages = []
-        for transcript in transcript_list:
-            languages.append({
-                'code': transcript.language_code,
-                'name': transcript.language
-            })
-        return languages, None
-    except TranscriptsDisabled:
-        return None, "Transcripts are disabled for this video."
-    except NoTranscriptFound:
-        return None, "No transcripts were found for this video."
+        req = urllib.request.Request(url, headers=headers)
+        response = urllib.request.urlopen(req)
+        html = response.read().decode('utf-8')
+        
+        # استخراج بيانات التكوين
+        client_config = re.search(r'"INNERTUBE_CLIENT_VERSION":"([\d\.]+)"', html)
+        api_key = re.search(r'"INNERTUBE_API_KEY":"([^"]+)"', html)
+        
+        if not client_config or not api_key:
+            return None, "Could not extract required configuration"
+        
+        client_version = client_config.group(1)
+        api_key = api_key.group(1)
+        
+        # بناء طلب الحصول على النصوص
+        transcript_url = f"https://www.youtube.com/youtubei/v1/get_transcript?key={api_key}"
+        
+        data = {
+            "context": {
+                "client": {
+                    "clientName": "WEB",
+                    "clientVersion": client_version,
+                },
+            },
+            "videoId": video_id
+        }
+        
+        data = json.dumps(data).encode('utf-8')
+        req = urllib.request.Request(transcript_url, data=data, headers={
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        })
+        
+        response = urllib.request.urlopen(req)
+        transcript_data = json.loads(response.read().decode('utf-8'))
+        
+        # استخراج النصوص المتاحة
+        if 'actions' in transcript_data:
+            transcripts = transcript_data['actions'][0]['updateEngagementPanelAction']['content']['transcriptRenderer']['body']['transcriptBodyRenderer']['cueGroups']
+            
+            formatted_transcript = []
+            for cue in transcripts:
+                text = cue['transcriptCueGroupRenderer']['cues'][0]['transcriptCueRenderer']['cue']['simpleText']
+                formatted_transcript.append(text)
+            
+            return '\n'.join(formatted_transcript), None
+            
+        return None, "No transcripts available"
+        
+    except urllib.error.HTTPError as e:
+        return None, f"HTTP Error: {str(e)}"
     except Exception as e:
-        return None, f"Error accessing transcripts: {str(e)}"
+        return None, f"Error: {str(e)}"
 
 # حقل إدخال رابط فيديو YouTube
 url = st.text_input('Enter YouTube video URL')
@@ -59,48 +105,20 @@ if url:
     if not video_id:
         st.error("Please enter a valid YouTube URL")
     else:
-        try:
-            # محاولة الحصول على النصوص المتاحة
-            languages, error = get_available_transcripts(video_id)
-            
-            if languages:
-                # إنشاء قائمة اللغات للاختيار
-                language_options = {
-                    f"{lang['name']} ({lang['code']})": lang['code']
-                    for lang in languages
-                }
+        if st.button('Extract Transcript'):
+            with st.spinner('Extracting transcript...'):
+                transcript, error = get_transcript(video_id)
                 
-                selected_language_display = st.selectbox(
-                    'Select Transcript Language',
-                    options=list(language_options.keys())
-                )
-                
-                if st.button('Extract Transcript'):
-                    try:
-                        with st.spinner('Extracting transcript...'):
-                            selected_language_code = language_options[selected_language_display]
-                            
-                            # محاولة الحصول على النص
-                            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[selected_language_code])
-                            
-                            # تنسيق النص
-                            formatter = TextFormatter()
-                            formatted_transcript = formatter.format_transcript(transcript)
-                            
-                            # عرض النص
-                            st.text_area('Extracted Transcript', formatted_transcript, height=300)
-                            
-                            # زر التحميل
-                            st.download_button(
-                                label="Download Transcript",
-                                data=formatted_transcript,
-                                file_name=f"transcript_{video_id}.txt",
-                                mime="text/plain"
-                            )
-                    except Exception as e:
-                        st.error(f"Error extracting transcript: {str(e)}")
-            else:
-                st.error(error)
-                
-        except Exception as e:
-            st.error(f"An error occurred: {str(e)}")
+                if transcript:
+                    # عرض النص
+                    st.text_area('Extracted Transcript', transcript, height=300)
+                    
+                    # زر التحميل
+                    st.download_button(
+                        label="Download Transcript",
+                        data=transcript,
+                        file_name=f"transcript_{video_id}.txt",
+                        mime="text/plain"
+                    )
+                else:
+                    st.error(error)
