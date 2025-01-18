@@ -1,56 +1,107 @@
-import gradio as gr
+import streamlit as st
 from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api.formatters import TextFormatter
 import re
 
+# إخفاء العناصر غير المرغوب فيها
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            .stDeployButton {display:none;}
+            #stStreamlitLogo {display: none;}
+            a {
+                text-decoration: none;
+                color: inherit;
+                pointer-events: none;
+            }
+            a:hover {
+                text-decoration: none;
+                color: inherit;
+                cursor: default;
+            }
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+# عنوان التطبيق
+st.title('YouTube Transcript Extractor')
+
+# حقل إدخال رابط فيديو YouTube
+url = st.text_input('Enter YouTube video URL')
+
 def extract_video_id(url):
-    """
-    استخراج معرف الفيديو من روابط YouTube المختلفة.
-    """
+    """استخراج معرف الفيديو من روابط YouTube المختلفة"""
     patterns = [
         r'(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?v=([^&\s]+)',
         r'(?:https?:\/\/)?(?:www\.)?youtu\.be\/([^\s]+)',
-        r'(?:https?:\/\/)?(?:www\.)?youtube\.com\/embed\/([^\s]+)'
+        r'(?:https?:\/\/)?(?:www\.)?youtube\.com\/embed\/([^\s]+)',
+        r'([a-zA-Z0-9_-]{11})'
     ]
+    
     for pattern in patterns:
         match = re.search(pattern, url)
         if match:
             return match.group(1)
     return None
 
-def get_transcript(url):
-    """
-    استخراج نصوص الفيديو باستخدام مكتبة YouTubeTranscriptApi.
-    """
-    video_id = extract_video_id(url)
-    if not video_id:
-        return "Invalid YouTube URL", ""
-    
-    try:
-        # المحاولة أولاً باللغة الإنجليزية
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
-        formatted_transcript = "\n".join([entry['text'] for entry in transcript])
-        return "Transcript successfully extracted (English)!", formatted_transcript
-    except:
+# زر لبدء استخراج النص
+if st.button('Start Extracting'):
+    if not url:
+        st.error("Please enter a YouTube video URL")
+    else:
         try:
-            # المحاولة باللغة العربية إذا لم تتوفر النصوص الإنجليزية
-            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['ar'])
-            formatted_transcript = "\n".join([entry['text'] for entry in transcript])
-            return "Transcript successfully extracted (Arabic)!", formatted_transcript
+            # عرض رسالة التحميل
+            with st.spinner('Extracting transcript...'):
+                # استخراج معرف الفيديو
+                video_id = extract_video_id(url)
+                
+                if not video_id:
+                    st.error("Invalid YouTube URL format. Please check the URL and try again.")
+                else:
+                    try:
+                        # الحصول على النصوص المتاحة
+                        transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
+                        
+                        # الحصول على اللغات المتاحة
+                        available_languages = [(t.language_code, t.language) for t in transcripts]
+                        
+                        # تحويل القائمة إلى قاموس للعرض بشكل أفضل
+                        language_options = {f"{lang[1]} ({lang[0]})": lang[0] for lang in available_languages}
+                        
+                        # اختيار اللغة
+                        selected_language_display = st.selectbox(
+                            'Select Transcript Language',
+                            options=list(language_options.keys()),
+                            index=0
+                        )
+                        
+                        # الحصول على رمز اللغة المحدد
+                        selected_language_code = language_options[selected_language_display]
+                        
+                        # جلب النص
+                        transcript = transcripts.find_transcript([selected_language_code]).fetch()
+                        
+                        # تنسيق النص المستخرج
+                        formatter = TextFormatter()
+                        output = formatter.format_transcript(transcript)
+                        
+                        # عرض النص المنسق
+                        st.text_area('Extracted Transcript', output, height=300)
+                        
+                        # إضافة زر للتحميل
+                        st.download_button(
+                            label="Download Transcript",
+                            data=output,
+                            file_name=f"transcript_{video_id}.txt",
+                            mime="text/plain"
+                        )
+                        
+                    except Exception as e:
+                        if "Subtitles are disabled for this video" in str(e):
+                            st.error("This video doesn't have any subtitles/transcripts available.")
+                        else:
+                            st.error(f"Error accessing transcript: {str(e)}")
+                            
         except Exception as e:
-            return "Error", str(e)
-
-# إعداد واجهة Gradio
-interface = gr.Interface(
-    fn=get_transcript,
-    inputs=gr.Textbox(label="Enter YouTube video URL"),
-    outputs=[
-        gr.Textbox(label="Status"),
-        gr.Textbox(label="Transcript", lines=10, placeholder="Transcript will appear here...")
-    ],
-    title="YouTube Transcript Extractor",
-    description="Extract transcripts from YouTube videos by entering their URL. Supports English and Arabic."
-)
-
-if __name__ == "__main__":
-    # تشغيل التطبيق
-    interface.launch(share=True)
+            st.error(f"An error occurred: {str(e)}")
