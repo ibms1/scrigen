@@ -30,6 +30,12 @@ st.title('YouTube Transcript Extractor')
 # حقل إدخال رابط فيديو YouTube
 url = st.text_input('Enter YouTube video URL')
 
+# ملاحظة بالإنجليزية لتوضيح أنه يجب تشغيل الفيديو
+st.markdown("""
+    **Note:** The video must be played first in order to extract the transcript.
+    The transcript will not be available unless the video is playing.
+""")
+
 def extract_video_id(url):
     """استخراج معرف الفيديو من روابط YouTube المختلفة"""
     patterns = [
@@ -57,8 +63,8 @@ if st.button('Start Extracting'):
             if not video_id:
                 st.error("Invalid YouTube URL format. Please check the URL and try again.")
             else:
-                # تضمين الفيديو باستخدام iframe
-                video_url = f"https://www.youtube.com/embed/{video_id}"
+                # تضمين الفيديو باستخدام iframe مع التشغيل التلقائي
+                video_url = f"https://www.youtube.com/embed/{video_id}?autoplay=1"
                 st.markdown(f'<iframe width="560" height="315" src="{video_url}" frameborder="0" allowfullscreen></iframe>', unsafe_allow_html=True)
                 
                 try:
