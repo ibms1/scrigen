@@ -32,8 +32,15 @@ url = st.text_input('Enter YouTube video URL')
 
 # ملاحظة بالإنجليزية لتوضيح أنه يجب تشغيل الفيديو
 st.markdown("""
-    **Note:** The video must be played first in order to extract the transcript.
-    The transcript will not be available unless the video is playing.
+    **Note:** Paste the link, press Enter, then click the "Start Extracting" button.
+
+
+
+
+
+
+
+.
 """)
 
 def extract_video_id(url):
